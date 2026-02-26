@@ -9,6 +9,7 @@ import polars as pl
 from patito.exceptions import _display_error_loc
 
 from matrix_validator import util
+from matrix_validator.normalize import normalize_dataframe
 from matrix_validator.checks import (
     CURIE_REGEX,
     DELIMITED_BY_PIPES,
@@ -107,6 +108,10 @@ class ValidatorPolarsDataFrameImpl(Validator):
 
     def __init__(self, nodes: pl.DataFrame, edges: pl.DataFrame, config=None):
         """Create a new instance of the polars-based validator."""
+        if nodes is not None:
+            nodes, _ = normalize_dataframe(nodes, "nodes")
+        if edges is not None:
+            edges, _ = normalize_dataframe(edges, "edges")
         super().__init__(nodes, edges, config)
         self._violations = []
 
@@ -217,13 +222,15 @@ class ValidatorPolarsFileImpl(Validator):
         # do an initial schema check on nodes
         nodes_schema = create_nodes_schema(self.prefixes)
         nodes_df = pl.scan_csv(self._nodes, separator="\t", has_header=True, ignore_errors=True, low_memory=True).limit(10).collect()
+        nodes_df, _ = normalize_dataframe(nodes_df, "nodes")
         nodes_violations = check_schema("nodes", nodes_schema, nodes_df)
         violations.extend(nodes_violations)
         violations.extend(check_for_superfluous_columns("nodes", nodes_schema, nodes_df))
 
         # do an initial schema check on edges
         edges_schema = create_edges_schema(self.prefixes)
-        edges_df = pl.scan_csv(self._nodes, separator="\t", has_header=True, ignore_errors=True, low_memory=True).limit(10).collect()
+        edges_df = pl.scan_csv(self._edges, separator="\t", has_header=True, ignore_errors=True, low_memory=True).limit(10).collect()
+        edges_df, _ = normalize_dataframe(edges_df, "edges")
         edges_violations = check_schema("edges", edges_schema, edges_df)
         violations.extend(edges_violations)
         violations.extend(check_for_superfluous_columns("edges", edges_schema, edges_df))
@@ -260,6 +267,8 @@ class ValidatorPolarsFileImpl(Validator):
         else:
             df = main_df.collect()
 
+        df, _ = normalize_dataframe(df, "nodes")
+
         validation_reports.extend(run_config_range_checks(df, self.config_contents))
         validation_reports.extend(run_node_checks(df, self.prefixes, self.class_prefix_map))
 
@@ -277,6 +286,8 @@ class ValidatorPolarsFileImpl(Validator):
             df = main_df.limit(limit).collect()
         else:
             df = main_df.collect()
+
+        df, _ = normalize_dataframe(df, "edges")
 
         validation_reports.extend(run_config_range_checks(df, self.config_contents))
         validation_reports.extend(run_edge_checks(df, self.prefixes))
@@ -460,6 +471,12 @@ def analyze_edge_types(nodes_df: pl.DataFrame, edges_df: pl.DataFrame, unique_ed
 
 def check_for_superfluous_columns(source: str, schema: pt.Model, df: pl.DataFrame):
     """Find superfluous columns in a KG from a Polars Dataframe."""
+    # Filter out _-prefixed internal columns before checking — these are
+    # recognized internal columns and should not be flagged as superfluous.
+    internal_cols = [c for c in df.columns if c.startswith("_")]
+    if internal_cols:
+        df = df.drop(internal_cols)
+
     validation_reports = []
     try:
         schema.validate(df, allow_missing_columns=True, allow_superfluous_columns=False)

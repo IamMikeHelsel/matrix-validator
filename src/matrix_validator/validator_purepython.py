@@ -9,6 +9,7 @@ from collections import Counter, defaultdict
 from tqdm import tqdm
 
 from matrix_validator import util
+from matrix_validator.normalize import normalize_header
 from matrix_validator.validator import Validator
 
 # Increase max field size
@@ -35,28 +36,28 @@ REQUIRED_NODE_COLUMNS = ["id", "category"]
 # A set of ALL valid KGX columns for edges (expand as needed)
 VALID_KGX_EDGE_COLUMNS = {
     "publications",
-    "publications_info",
-    "kg2_ids",
+    "_publications_info",
+    "_kg2_ids",
     "qualified_predicate",
     "qualified_object_aspect",
     "qualified_object_direction",
     "domain_range_exclusion",
     "id",
-    ":TYPE",
-    ":START_ID",
-    ":END_ID",
+    "_:TYPE",
+    "_:START_ID",
+    "_:END_ID",
 }.union(REQUIRED_EDGE_COLUMNS)
 
 # A set of ALL valid KGX columns for nodes
 VALID_KGX_NODE_COLUMNS = {
     "name",
-    "all_names",
+    "_all_names",
     "all_categories",
     "iri",
     "description",
-    "equivalent_curies",
+    "_equivalent_curies",
     "publications",
-    ":LABEL",
+    "_:LABEL",
 }.union(REQUIRED_NODE_COLUMNS)
 
 # Possible rule names that may appear in the violations dictionary.
@@ -173,6 +174,9 @@ def check_headers(header, violations_dict, file_type="edges"):
         required_cols = REQUIRED_NODE_COLUMNS
 
     for col in header:
+        # After normalization, any _-prefixed column is a recognized internal column
+        if col.startswith("_") and col not in valid_cols:
+            continue
         if col not in valid_cols:
             record_violation(
                 violations_dict,
@@ -257,6 +261,7 @@ def load_node_ids(nodes_file, violations, prefixes, found_unknown_prefixes):
                 if not header:
                     record_violation(violations, "Missing header row", "Nodes file has no columns in the header.")
                     break
+                header, _, _ = normalize_header(header, "nodes")
                 check_headers(header, violations, file_type="nodes")
                 num_header_cols = len(header)
                 try:
@@ -315,6 +320,7 @@ def check_edges_file(edges_file, node_ids, violations, prefixes, found_unknown_p
                 if not header:
                     record_violation(violations, "Missing header row", "Edges file has no columns in the header.")
                     break
+                header, _, _ = normalize_header(header, "edges")
                 check_headers(header, violations, file_type="edges")
                 num_header_cols = len(header)
                 try:
