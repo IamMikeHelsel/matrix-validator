@@ -280,5 +280,33 @@ class TestBiolinkColumnSets(unittest.TestCase):
         self.assertNotIn(":END_ID", BIOLINK_EDGE_COLUMNS)
 
 
+class TestConfigColumnResolver(unittest.TestCase):
+    """Test that config column names resolve to normalized DataFrame columns."""
+
+    def test_resolve_direct_match(self):
+        """Config column found directly in DataFrame columns."""
+        from matrix_validator.validator_polars import _resolve_config_column
+
+        self.assertEqual(_resolve_config_column("_Coexpression", ["subject", "_Coexpression"]), "_Coexpression")
+
+    def test_resolve_prefixed_fallback(self):
+        """Config column without _ prefix resolves to _-prefixed DataFrame column."""
+        from matrix_validator.validator_polars import _resolve_config_column
+
+        self.assertEqual(_resolve_config_column("Coexpression", ["subject", "_Coexpression"]), "_Coexpression")
+
+    def test_resolve_not_found(self):
+        """Config column not found in any form returns None."""
+        from matrix_validator.validator_polars import _resolve_config_column
+
+        self.assertIsNone(_resolve_config_column("nonexistent", ["subject", "_Coexpression"]))
+
+    def test_resolve_biolink_column(self):
+        """Biolink columns resolve directly (no prefix needed)."""
+        from matrix_validator.validator_polars import _resolve_config_column
+
+        self.assertEqual(_resolve_config_column("subject", ["subject", "_Coexpression"]), "subject")
+
+
 if __name__ == "__main__":
     unittest.main()

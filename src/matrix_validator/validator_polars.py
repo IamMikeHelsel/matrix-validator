@@ -333,6 +333,22 @@ class ValidatorPolarsFileImpl(Validator):
         return validation_reports
 
 
+def _resolve_config_column(config_column: str, column_names: list[str]) -> str | None:
+    """Resolve a config column name to its actual DataFrame column name.
+
+    Handles backwards compatibility: if the config references an unprefixed
+    internal column (e.g., "Coexpression") but the DataFrame has the normalized
+    name (e.g., "_Coexpression"), resolve it automatically.
+    """
+    if config_column in column_names:
+        return config_column
+    # Try the _-prefixed version for backwards compatibility
+    prefixed = f"_{config_column}"
+    if prefixed in column_names:
+        return prefixed
+    return None
+
+
 def run_config_range_checks(df: pl.DataFrame, config_contents):
     """Run the config range checks for both nodes or edges."""
     validation_reports = []
@@ -344,25 +360,29 @@ def run_config_range_checks(df: pl.DataFrame, config_contents):
             for check in config_contents["nodes_attribute_checks"]["checks"]:
                 if "range" in check:
                     range_check = check["range"]
-                    if range_check["column"] in column_names:
+                    resolved = _resolve_config_column(range_check["column"], column_names)
+                    if resolved:
                         validation_reports.append(
-                            check_column_range(df, range_check["column"], int(range_check["min"]), int(range_check["max"]))
+                            check_column_range(df, resolved, int(range_check["min"]), int(range_check["max"]))
                         )
                 if "enum" in check:
                     enum_check = check["enum"]
-                    if enum_check["column"] in column_names:
-                        validation_reports.append(check_column_enum(df, enum_check["column"], list(enum_check["values"])))
+                    resolved = _resolve_config_column(enum_check["column"], column_names)
+                    if resolved:
+                        validation_reports.append(check_column_enum(df, resolved, list(enum_check["values"])))
 
         if "edges_attribute_checks" in config_contents:
             for check in config_contents["edges_attribute_checks"]["checks"]:
                 if "range" in check:
-                    if check["range"]["column"] in column_names:
+                    resolved = _resolve_config_column(check["range"]["column"], column_names)
+                    if resolved:
                         validation_reports.append(
-                            check_column_range(df, check["range"]["column"], int(check["range"]["min"]), int(check["range"]["max"]))
+                            check_column_range(df, resolved, int(check["range"]["min"]), int(check["range"]["max"]))
                         )
                 if "enum" in check:
-                    if check["enum"]["column"] in column_names:
-                        validation_reports.append(check_column_enum(df, check["range"]["column"], list(check["range"]["values"])))
+                    resolved = _resolve_config_column(check["enum"]["column"], column_names)
+                    if resolved:
+                        validation_reports.append(check_column_enum(df, resolved, list(check["enum"]["values"])))
 
     return validation_reports
 
